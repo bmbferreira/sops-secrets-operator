@@ -198,6 +198,14 @@ type SopsMetadata struct {
 	//+optional
 	EncryptedRegex string `json:"encrypted_regex,omitempty"`
 
+	// Regex used to select the values which stay unencrypted in SopsSecret resource.
+	// All the other values are encrypted. Use this option to keep non-secret
+	// configuration readable in git. The regex must also match apiVersion, kind,
+	// metadata, status and name, because Kubernetes adds plain text fields to the
+	// resource, for example metadata.uid.
+	//+optional
+	UnencryptedRegex string `json:"unencrypted_regex,omitempty"`
+
 	// MacOnlyEncrypted - sops setting; when true the MAC is computed
 	// over values that end up encrypted only (sops --mac-only-encrypted).
 	//+optional

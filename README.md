@@ -243,6 +243,24 @@ sops encrypt \
 > **NOTE:** after using regex `sops --encrypted-regex` resulting file may be inapplicable to the kubernetes cluster, use
 > this feature with care
 
+or, to keep the values which are not secret in plain text:
+
+```bash
+sops encrypt \
+  --kms 'arn:aws:kms:<region>:<account>:alias/<key-alias-name>' \
+  --unencrypted-regex='^(apiVersion|kind|metadata|status|name|LOG_LEVEL|PORT)$' jenkins-secrets.yaml \
+  > jenkins-secrets.enc.yaml
+```
+
+`sops --unencrypted-regex` encrypts all the values, except the values with a key that matches the
+regex. Use this option to keep configuration which is not secret readable in git, and to show the
+changes to that configuration in a diff. A new key is encrypted by default.
+
+> **NOTE:** the regex must also match `apiVersion`, `kind`, `metadata`, `status` and `name`.
+> Kubernetes adds fields to the resource when it stores the resource, for example `metadata.uid`
+> and `metadata.resourceVersion`. These fields are in plain text. If the regex does not match
+> them, the operator tries to decrypt them, and the reconciliation fails.
+
 - Encrypt file using `sops` and GCP KMS key:
 
 ```bash

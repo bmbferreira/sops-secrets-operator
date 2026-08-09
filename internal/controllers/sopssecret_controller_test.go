@@ -26,6 +26,7 @@ var _ = Describe("SopssecretController", func() {
 	TestSecretObject02 := &isindirv1alpha3.SopsSecret{}
 	TestSecretObject03 := &isindirv1alpha3.SopsSecret{}
 	TestSecretObject04 := &isindirv1alpha3.SopsSecret{}
+	TestSecretObject05 := &isindirv1alpha3.SopsSecret{}
 	BeforeEach(func() {
 		// 00 secret
 		content, err := os.ReadFile(filepath.Join("..", "..", "config", "age-test-key", "00-test-secrets.yaml"))
@@ -65,6 +66,14 @@ var _ = Describe("SopssecretController", func() {
 
 		obj, _, err = scheme.Codecs.UniversalDeserializer().Decode(content, nil, nil)
 		TestSecretObject04 = obj.(*isindirv1alpha3.SopsSecret)
+		Expect(err).Should(BeNil())
+
+		// 05 secret (encrypted with sops --unencrypted-regex)
+		content, err = os.ReadFile(filepath.Join("..", "..", "config", "age-test-key", "05-test-secrets-unencrypted-regex.yaml"))
+		Expect(err).Should(BeNil())
+
+		obj, _, err = scheme.Codecs.UniversalDeserializer().Decode(content, nil, nil)
+		TestSecretObject05 = obj.(*isindirv1alpha3.SopsSecret)
 		Expect(err).Should(BeNil())
 	})
 
@@ -345,6 +354,39 @@ var _ = Describe("SopssecretController", func() {
 
 			By("By deleting SopsSecret version 04")
 			Expect(controller.K8sClient.Delete(ctx, TestSecretObject04)).To(Succeed())
+		})
+	})
+
+	Context("When Creating SopsSecret encrypted with --unencrypted-regex", func() {
+		It("Should keep the allowlisted value in plain text and decrypt the other value using SopsSecret 05", func() {
+			ctx := context.Background()
+
+			By("By creating a new SopsSecret version 05 with unencrypted_regex set")
+			Expect(controller.K8sClient.Create(ctx, TestSecretObject05)).To(Succeed())
+
+			By("By checking that status of the SopsSecret is Healthy")
+			sourceSopsSecretNamespacedName := types.NamespacedName{Namespace: "default", Name: "test-sopssecret-05"}
+			Eventually(func(g Gomega) {
+				sourceSopsSecret := &isindirv1alpha3.SopsSecret{}
+				g.Expect(controller.K8sClient.Get(ctx, sourceSopsSecretNamespacedName, sourceSopsSecret)).To(Succeed())
+				g.Expect(sourceSopsSecret.Status.Message).To(Equal("Healthy"))
+				// Read the field back from the API server: a structural CRD
+				// prunes unknown fields, so this only stays true if the CRD
+				// schema actually carries unencrypted_regex.
+				g.Expect(sourceSopsSecret.Sops.UnencryptedRegex).To(Equal("^(apiVersion|kind|metadata|status|name|PLAIN_CONFIG_VALUE)$"))
+			}, timeout, interval).Should(Succeed())
+
+			By("By checking that the managed k8s secret holds the plain text value and the decrypted value")
+			managedSecretNamespacedName := types.NamespacedName{Namespace: "default", Name: "test-partially-encrypted-05"}
+			Eventually(func(g Gomega) {
+				managedSecret := &corev1.Secret{}
+				g.Expect(controller.K8sClient.Get(ctx, managedSecretNamespacedName, managedSecret)).To(Succeed())
+				g.Expect(string(managedSecret.Data["PLAIN_CONFIG_VALUE"])).To(Equal("someConfigValue"))
+				g.Expect(string(managedSecret.Data["SECRET_TOKEN"])).To(Equal("someSecretToken"))
+			}, timeout, interval).Should(Succeed())
+
+			By("By deleting SopsSecret version 05")
+			Expect(controller.K8sClient.Delete(ctx, TestSecretObject05)).To(Succeed())
 		})
 	})
 
